@@ -138,11 +138,16 @@ def load_model_and_tokenizer(model_id: str, eager_attn: bool = False):
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
 
     print(f"Loading model{'  [eager attention]' if eager_attn else ''}...")
-    kwargs = dict(
+    kwargs: dict = dict(
         trust_remote_code=True,
-        torch_dtype=torch.bfloat16,
-        device_map="auto",
+        dtype=torch.bfloat16,
     )
+    # device_map="auto" triggers infer_auto_device_map which calls
+    # model.all_tied_weights_keys — absent from the custom LLaDAModelLM class,
+    # causing an AttributeError on recent transformers versions.  An explicit
+    # dict mapping bypasses that inference path while still using accelerate.
+    if torch.cuda.is_available():
+        kwargs["device_map"] = {"": torch.cuda.current_device()}
     if eager_attn:
         kwargs["attn_implementation"] = "eager"
 
