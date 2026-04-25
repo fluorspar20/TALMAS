@@ -140,18 +140,12 @@ def load_model_and_tokenizer(model_id: str, eager_attn: bool = False):
     print(f"Loading model{'  [eager attention]' if eager_attn else ''}...")
     kwargs: dict = dict(
         trust_remote_code=True,
-        dtype=torch.bfloat16,
+        torch_dtype=torch.bfloat16,
+        device_map="auto",
     )
     if eager_attn:
         kwargs["attn_implementation"] = "eager"
 
-    # Do NOT pass device_map: any device_map value (including explicit dicts)
-    # triggers caching_allocator_warmup → get_total_byte_count which calls
-    # model.all_tied_weights_keys — an attribute absent from LLaDAModelLM on
-    # recent transformers versions.  Loading without device_map and moving
-    # manually avoids the broken code path entirely.
     model = AutoModel.from_pretrained(model_id, **kwargs)
-    if torch.cuda.is_available():
-        model = model.to(f"cuda:{torch.cuda.current_device()}")
     model.eval()
     return tokenizer, model
