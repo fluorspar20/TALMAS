@@ -57,7 +57,7 @@ from src.utils import (
     resolve_special_tokens,
     load_model_and_tokenizer,
 )
-from src.ppmi_sampling import flexible_remasking_sample
+from src.ppmi_sampling import flexible_remasking_sample, SDPACapture
 from src.talmas import TALMASHookManager
 
 
@@ -146,7 +146,17 @@ def evaluate(args) -> float:
     print(f"Evaluating on {len(dataset)} remaining examples...\n")
 
     # ------------------------------------------------------------------ #
-    # Set up TALMAS hooks                                                  #
+    # Set up PPMI capture (MUST come before TALMAS)                        #
+    # TALMASHookManager captures F.sdpa as a closure at __init__ time;    #
+    # installing SDPACapture first makes TALMAS's original_sdpa point     #
+    # through the capture wrapper, so we get TALMAS-biased weights.       #
+    # ------------------------------------------------------------------ #
+    ppmi_capture = None
+    if args.scoring == "ppmi":
+        ppmi_capture = SDPACapture().install()
+
+    # ------------------------------------------------------------------ #
+    # Set up TALMAS hooks (after capture)                                  #
     # ------------------------------------------------------------------ #
     hook_manager = None
     if talmas_cfg is not None and talmas_cfg.lambda_max > 0.0:
@@ -179,6 +189,7 @@ def evaluate(args) -> float:
                 hook_manager=hook_manager,
                 scoring=args.scoring,
                 layer_agg=args.layer_agg,
+                sdpa_capture=ppmi_capture,
             )
 
             output_text = tokenizer.decode(output_ids, skip_special_tokens=True)
@@ -214,6 +225,8 @@ def evaluate(args) -> float:
     finally:
         if hook_manager is not None:
             hook_manager.remove()
+        if ppmi_capture is not None:
+            ppmi_capture.uninstall()
 
     # ------------------------------------------------------------------ #
     # Report                                                               #
